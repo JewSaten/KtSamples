@@ -1,6 +1,23 @@
 package com.jew.tech.ktsamples
 
+
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.flow.transformWhile
+import kotlinx.coroutines.flow.zip
 import kotlin.system.measureTimeMillis
 
 
@@ -140,9 +157,9 @@ suspend fun doWork() = coroutineScope {
     }
     launch(Dispatchers.IO){
         println("IO --- current thread is ${Thread.currentThread().name}")
-        launch(Dispatchers.Main){
+        launch (Dispatchers.Default){
 //            doSomethingOne()
-            println("Main --- current thread is ${Thread.currentThread().name}")
+            println("dEFAULT --- current thread is ${Thread.currentThread().name}")
         }
     }
 
@@ -150,7 +167,212 @@ suspend fun doWork() = coroutineScope {
         println("newSingleThreadContext: I'm working in thread ${Thread.currentThread().name}")
     }
 
+//    val job = GlobalScope.launch {
+//        println("sdfsdfsfds")
+//    }
+//    job.join()
+    flow{
+        for(i in 1..5){
+            emit(i)
+        }
+    }.map {
+        it*2
+    }.transform{
+        emit(it+1)
+    }.collect {
+        println("i:$it")
+    }
+
+    (1..5).asFlow().collect {
+        println("asFlow:$it")
+    }
+
+    flow {
+        for (i in 0 until 3) {
+            println("Emit Flow in ${Thread.currentThread().name}")
+            emit(i)
+        }
+    }.map {
+        println("Map Flow in ${Thread.currentThread().name}")
+        it * it
+    }.flowOn(Dispatchers.IO).collect {
+        println("Collect Flow in ${Thread.currentThread().name}")
+        println("Result---$it")
+    }
+
+
+    val cost = measureTimeMillis {
+        flow {
+            for (i in 0..3) {
+                println("Emit Flow in ${Thread.currentThread().name}")
+                delay(100)
+                emit(i)
+            }
+        }.collectLatest {
+            println("collectLatest：$it")
+        }
+//            f.collectIndexed { index, value ->
+//            println(" index---$index ,values: $value")
+//        }
+//        f.collectLatest {
+//            println("collectLatest：$it")
+//        }
+    }
+    println("cost time: $cost")
+
+
+    flowOf(1, 2, 3).collectLatest {
+        delay(1)
+        println("Result---$it")
+    }
+
+    launch {
+        flow {
+            for (i in 0..3) {
+                println("Emit Flow in ${Thread.currentThread().name}")
+                emit(i)
+            }
+        }.transformWhile { t ->
+            emit(t)
+            t == 3
+        }.collect {
+            println("transformWhile $it")
+        }
+
+    }
+    //同步非阻塞
+
+    launch {
+        flow {
+            for (i in 0..3) {
+                emit(i)
+            }
+        }.onStart {
+            println("Start Flow in ${Thread.currentThread().name}")
+        }.onEach {
+            println("emit value---$it")
+        }.collect {
+            println("Result---$it")
+        }
+    }
+
+    launch {
+        flow {
+            for (i in 0..3) {
+                emit(i)
+            }
+        }.onStart {
+            println("Start Flow in ${Thread.currentThread().name}")
+        }.onEach {
+            println("emit value---$it")
+        }.flowOn(Dispatchers.IO).collect {
+            println("Result---$it")
+        }
+
+    }
+    //同步非阻塞
+    val sync = measureTimeMillis {
+        flow {
+            for (i in 0..5) {
+                delay(200)
+                println("product : ${Thread.currentThread().name}")
+                emit(i)
+            }
+        }.collect {
+            delay(500)
+            println("consume : ${Thread.currentThread().name}")
+            println("i: $it")
+        }
+    }
+
+    //异步非阻塞
+    val buff = measureTimeMillis {
+        flow {
+            for (i in 0..5) {
+                delay(200)
+                println("product : ${Thread.currentThread().name}")
+                emit(i)
+            }
+        }.buffer().collect {
+            delay(500)
+            println("consume : ${Thread.currentThread().name}")
+            println("i: $it")
+        }
+    }
+
+    val flowOn = measureTimeMillis {
+        flow {
+            for (i in 0..5) {
+                delay(200)
+                println("product : ${Thread.currentThread().name}")
+                emit(i)
+            }
+        }.flowOn(Dispatchers.Default).collect {
+            delay(500)
+            println("consume : ${Thread.currentThread().name}")
+            println("i: $it")
+        }
+    }
+    println("sync time: $sync")
+    println("buff time: $buff")
+    println("flowOn time: $flowOn")
+
+    val conflate = measureTimeMillis {
+        flow {
+            for (i in 0..5) {
+                delay(200)
+                println("product : ${Thread.currentThread().name}")
+                emit(i)
+            }
+        }.conflate().collect {
+            delay(500)
+            println("consume : ${Thread.currentThread().name}")
+            println("i: $it")
+        }
+    }
+    println("conflate time: $conflate")
+
+    launch {
+//        withTimeoutOrNull(1000) {
+        val latest = measureTimeMillis {
+            flow {
+                for (i in 0..5) {
+                    delay(200)
+                    println("product111 : ${Thread.currentThread().name}")
+                    emit(i)
+                }
+            }.collectLatest {
+                delay(500)
+                println("consume111 : ${Thread.currentThread().name}")
+                println("i: $it")
+            }
+        }
+        println("latest time: $latest")
+//        }
+    }
+
+
+    val flow1 = flowOf(1,2).onEach { delay(10) }
+    val flow2 = flowOf("a","b","c").onEach { delay(15) }
+    //combine 组合
+    combine(flow1,flow2){f1,f2-> f1.toString()+f2}.collect {
+        println("combine i: $it ")
+    }
+
+    //merge 合并
+    listOf(flow1,flow2).merge().collect {
+        println("merge i: $it ")
+    }
+
+    //zip
+
+    flow1.zip(flow2){f1,f2-> f1.toString()+f2}.collect {
+        println("zip i: $it ")
+    }
+
 }
+
+
 
 suspend fun main()  {
     doWork()
